@@ -22,7 +22,7 @@ const SID_FREQ: u32 = 1_000_000;
 const NUM_VOICES: usize = 3;
 
 /// SID Chip, as represented by its interface
-pub struct SID<SPI, CS, RES, DELAY> {
+pub struct Sid<SPI, CS, RES, DELAY> {
     spi: SPI,
     cs: CS,
     reset: RES,
@@ -30,7 +30,7 @@ pub struct SID<SPI, CS, RES, DELAY> {
     state: SIDState,
 }
 
-impl<SPI, CS, RES, E, PinError, DELAY> SID<SPI, CS, RES, DELAY>
+impl<SPI, CS, RES, E, PinError, DELAY> Sid<SPI, CS, RES, DELAY>
 where
     SPI: spi::Write<u8, Error = E>,
     CS: OutputPin<Error = PinError>,
@@ -39,7 +39,7 @@ where
 {
     /// Returns a new `SID` instance with the default initial values
     pub fn new(spi: SPI, cs: CS, reset: RES, delay: DELAY) -> Result<Self, E> {
-        Ok(SID {
+        Ok(Sid {
             spi,
             cs,
             reset,
@@ -55,8 +55,8 @@ where
         self.cs.set_high().ok();
     }
     fn write_regs(&mut self, start_addr: u8, values: &[u8]) {
-        for i in 0..values.len() {
-            self.write_reg(start_addr + (i as u8), values[i]);
+        for (i, value) in values.iter().enumerate() {
+            self.write_reg(start_addr + (i as u8), *value);
         }
     }
     /// Resets the chip by cycling its reset line

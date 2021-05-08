@@ -109,6 +109,11 @@ impl SIDState {
     }
 }
 
+impl Default for SIDState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Control {
     pub fn payload(&self) -> u8 {
         let mut byte: u8 = 0;
@@ -146,7 +151,7 @@ impl Envelope {
     }
 }
 
-impl Voice {
+impl  Voice {
     pub fn payload(&self) -> [u8; 7] {
         // Creates a byte array for sending over SPI
         let freq_low = (self.frequency & 0xFF) as u8;

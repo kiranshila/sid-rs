@@ -1,0 +1,3 @@
+# sid-rs
+
+License: MIT
