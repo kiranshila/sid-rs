@@ -1,19 +1,23 @@
+use core::convert::TryInto;
+use flagset::{flags, FlagSet};
 use ux::{u11, u12, u4};
 
-#[derive(Copy, Clone)]
-pub enum VoiceShape {
-    Square,
-    Triangle,
-    Sawtooth,
-    Noise,
+flags! {
+    pub enum VoiceShape:u8 {
+        Triangle = 0b0001_0000,
+        Sawtooth = 0b0010_0000,
+        Square   = 0b0100_0000,
+        Noise    = 0b1000_0000,
+    }
 }
 
-#[derive(Copy, Clone)]
-pub enum FilterKind {
-    ThreeOff,
-    HighPass,
-    BandPass,
-    LowPass,
+flags! {
+    pub enum FilterKind:u8 {
+        LowPass  = 0b0001_0000,
+        BandPass = 0b0010_0000,
+        HighPass = 0b0100_0000,
+        ThreeOff = 0b1000_0000,
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -24,13 +28,39 @@ pub struct Envelope {
     release: u4,
 }
 
+impl Default for Envelope {
+    fn default() -> Self {
+        Envelope {
+            attack: u4::new(0),
+            decay: u4::new(0),
+            sustain: u4::new(7),
+            release: u4::new(0),
+        }
+    }
+}
+
+flags! {
+    pub enum ControlFlag:u8 {
+        Gate,
+        Sync,
+        RingMod,
+        Test,
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Control {
-    shape: VoiceShape,
-    test: bool,
-    ring_mod: bool,
-    sync: bool,
-    gate: bool,
+    shapes: FlagSet<VoiceShape>,
+    flags: FlagSet<ControlFlag>,
+}
+
+impl Default for Control {
+    fn default() -> Self {
+        Control {
+            shapes: VoiceShape::Square.into(),
+            flags: Default::default(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -41,12 +71,24 @@ pub struct Voice {
     control: Control,
 }
 
-#[derive(Copy, Clone)]
-pub struct FilterTargets {
-    voice1: bool,
-    voice2: bool,
-    voice3: bool,
-    external: bool,
+impl Default for Voice {
+    fn default() -> Self {
+        Voice {
+            frequency: 7217,
+            pwm: u12::new(2048),
+            envelope: Default::default(),
+            control: Default::default(),
+        }
+    }
+}
+
+flags! {
+    pub enum FilterTarget:u8 {
+        Voice1,
+        Voice2,
+        Voice3,
+        External,
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -54,149 +96,74 @@ pub struct Filter {
     frequency: u11,
     resonance: u4,
     volume: u4,
-    kind: FilterKind,
-    targets: FilterTargets,
+    kinds: FlagSet<FilterKind>,
+    targets: FlagSet<FilterTarget>,
 }
 
-#[derive(Copy, Clone)]
-pub struct SIDState {
-    voices: [Voice; 3],
-    filter: Filter,
+impl Default for Filter {
+    fn default() -> Self {
+        Filter {
+            frequency: Default::default(),
+            resonance: Default::default(),
+            volume: u4::new(7),
+            kinds: Default::default(),
+            targets: Default::default(),
+        }
+    }
 }
 
-impl SIDState {
+#[derive(Copy, Clone, Default)]
+pub struct SidState {
+    pub voices: [Voice; 3],
+    pub filter: Filter,
+}
+
+impl SidState {
     // Creates a new SID chip state with sane default values
     pub fn new() -> Self {
-        let voice = Voice {
-            frequency: 7217,
-            pwm: u12::new(2048),
-            envelope: Envelope {
-                attack: u4::new(0),
-                decay: u4::new(0),
-                sustain: u4::new(7),
-                release: u4::new(0),
-            },
-            control: Control {
-                shape: VoiceShape::Square,
-                test: false,
-                ring_mod: false,
-                sync: false,
-                gate: false,
-            },
-        };
-        let filter = Filter {
-            frequency: u11::new(0),
-            resonance: u4::new(0),
-            volume: u4::new(7),
-            kind: FilterKind::LowPass,
-            targets: FilterTargets {
-                voice1: false,
-                voice2: false,
-                voice3: false,
-                external: false,
-            },
-        };
-        SIDState {
-            voices: [voice, voice, voice],
-            filter,
-        }
-    }
-    pub fn filter(&self) -> &Filter {
-        &self.filter
-    }
-    pub fn voice(&self, voice: usize) -> &Voice {
-        &self.voices[voice]
+        Default::default()
     }
 }
 
-impl Default for SIDState {
-    fn default() -> Self {
-        Self::new()
-    }
+pub trait Payload {
+    type Output;
+    fn payload(&self, buf: &mut Self::Output);
 }
-impl Control {
-    pub fn payload(&self) -> u8 {
-        let mut byte: u8 = 0;
-        match self.shape {
-            VoiceShape::Noise => byte |= 1 << 7,
-            VoiceShape::Square => byte |= 1 << 6,
-            VoiceShape::Sawtooth => byte |= 1 << 5,
-            VoiceShape::Triangle => byte |= 1 << 4,
-        }
-        if self.test {
-            byte |= 1 << 3;
-        }
-        if self.ring_mod {
-            byte |= 1 << 2;
-        }
-        if self.sync {
-            byte |= 1 << 1;
-        }
-        if self.gate {
-            byte |= 1
-        }
-        byte
+
+impl Payload for Control {
+    type Output = [u8; 1];
+    fn payload(&self, buf: &mut Self::Output) {
+        buf[0] = self.shapes.bits() | self.flags.bits();
     }
 }
 
-impl Envelope {
-    pub fn payload(&self) -> [u8; 2] {
-        let mut ad_byte: u8 = 0;
-        ad_byte |= u8::from(self.attack) << 4;
-        ad_byte |= u8::from(self.decay);
-        let mut sr_byte: u8 = 0;
-        sr_byte |= u8::from(self.sustain) << 4;
-        sr_byte |= u8::from(self.release);
-        [ad_byte, sr_byte]
+impl Payload for Envelope {
+    type Output = [u8; 2];
+    fn payload(&self, buf: &mut Self::Output) {
+        buf[0] = (u8::from(self.attack) << 4) | u8::from(self.decay);
+        buf[1] = (u8::from(self.sustain) << 4) | u8::from(self.release);
     }
 }
 
-impl Voice {
-    pub fn payload(&self) -> [u8; 7] {
+impl Payload for Voice {
+    type Output = [u8; 7];
+    fn payload(&self, buf: &mut Self::Output) {
         // Creates a byte array for sending over SPI
-        let freq_low = (self.frequency & 0xFF) as u8;
-        let freq_high = (self.frequency >> 8) as u8;
-        let pwm_low = (u16::from(self.pwm) & 0x00FF) as u8;
-        let pwm_high = ((u16::from(self.pwm) & 0x0F00) >> 8) as u8;
-        let control = self.control.payload();
-        let envelope = self.envelope.payload();
-        [
-            freq_low,
-            freq_high,
-            pwm_low,
-            pwm_high,
-            control,
-            envelope[0],
-            envelope[1],
-        ]
+        buf[0] = (self.frequency & 0xFF) as u8;
+        buf[1] = (self.frequency >> 8) as u8;
+        buf[2] = (u16::from(self.pwm) & 0x00FF) as u8;
+        buf[3] = ((u16::from(self.pwm) & 0x0F00) >> 8) as u8;
+        self.control.payload(&mut buf[4..5].try_into().unwrap());
+        self.envelope.payload(&mut buf[5..6].try_into().unwrap());
     }
 }
 
-impl Filter {
-    pub fn payload(&self) -> [u8; 4] {
-        let freq_low = (u16::from(self.frequency) & 0x7) as u8;
-        let freq_high = ((u16::from(self.frequency) & 0x7F8) >> 3) as u8;
-        let mut res_filt = u8::from(self.resonance) << 4;
-        if self.targets.voice1 {
-            res_filt |= 1
-        }
-        if self.targets.voice2 {
-            res_filt |= 1 << 1
-        }
-        if self.targets.voice3 {
-            res_filt |= 1 << 2
-        }
-        if self.targets.external {
-            res_filt |= 1 << 3
-        }
-        let mut mode_vol: u8 = 0;
-        mode_vol |= u8::from(self.volume);
-        match self.kind {
-            FilterKind::ThreeOff => mode_vol |= 1 << 7,
-            FilterKind::HighPass => mode_vol |= 1 << 6,
-            FilterKind::BandPass => mode_vol |= 1 << 5,
-            FilterKind::LowPass => mode_vol |= 1 << 4,
-        }
-        [freq_low, freq_high, res_filt, mode_vol]
+impl Payload for Filter {
+    type Output = [u8; 4];
+    fn payload(&self, buf: &mut Self::Output) {
+        buf[0] = (u16::from(self.frequency) & 0x7) as u8;
+        buf[1] = ((u16::from(self.frequency) & 0x7F8) >> 3) as u8;
+        buf[2] = u8::from(self.resonance) << 4 | self.targets.bits();
+        buf[3] = self.kinds.bits() | u8::from(self.volume);
     }
 }

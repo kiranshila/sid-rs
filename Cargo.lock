@@ -102,6 +102,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "flagset"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3005ca991bc29204abe94faa2152e003b41ca39cad265a9cfdc977c03c6eead"
+
+[[package]]
 name = "generic-array"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -209,6 +215,7 @@ dependencies = [
  "cortex-m 0.6.7",
  "cortex-m-rt",
  "embedded-hal",
+ "flagset",
  "panic-probe",
  "stm32f0xx-hal",
  "ux",

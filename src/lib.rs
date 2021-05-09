@@ -8,6 +8,10 @@ mod state;
 use registers::{FilterRegister, VoiceRegister};
 pub use state::*;
 
+// Bring in the flagset crate
+extern crate flagset;
+
+// Bring in the hal traits
 use embedded_hal as hal;
 
 // SPI for the data transfer and a few chip control lines
@@ -22,19 +26,17 @@ const SID_FREQ: u32 = 1_000_000;
 const NUM_VOICES: usize = 3;
 
 /// SID Chip, as represented by its interface
-pub struct Sid<SPI, CS, RES, DELAY> {
+pub struct Sid<SPI, CS, DELAY> {
     spi: SPI,
     cs: CS,
-    reset: RES,
     delay: DELAY,
-    state: SIDState,
+    state: SidState,
 }
 
-impl<SPI, CS, RES, E, PinError, DELAY> Sid<SPI, CS, RES, DELAY>
+impl<SPI, CS, E, PinError, DELAY> Sid<SPI, CS, DELAY>
 where
     SPI: spi::Write<u8, Error = E>,
     CS: OutputPin<Error = PinError>,
-    RES: OutputPin<Error = PinError>,
     DELAY: DelayMs<u16>,
 {
     /// Returns a new `SID` instance with the default initial values
@@ -42,17 +44,19 @@ where
         Ok(Sid {
             spi,
             cs,
-            reset,
             delay,
-            state: SIDState::new(),
+            state: Default::default(),
         })
     }
     // Low Level SPI interface
+    // FIXME
     fn write_reg(&mut self, addr: u8, value: u8) {
         let bytes = [addr & 0x1F, value];
         self.cs.set_low().ok();
         self.spi.write(&bytes).ok();
         self.cs.set_high().ok();
+        // Delay for 2 clock cycles to make sure the SID got it
+        self.delay.delay_us(2);
     }
     fn write_regs(&mut self, start_addr: u8, values: &[u8]) {
         for (i, value) in values.iter().enumerate() {
@@ -60,6 +64,7 @@ where
         }
     }
     /// Resets the chip by cycling its reset line
+    /// FIXME
     pub fn reset(&mut self) {
         // From the datasheet, hold ~RES low for 10 cycles
         self.reset.set_low().ok();
@@ -68,15 +73,23 @@ where
     }
     // Actual interface
     pub fn write_filter(&mut self) {
+        // Create buffer
+        let mut buf = [0u8;4];
+        // Fill contents
+        self.state.filter.payload(&mut buf);
         self.write_regs(
             FilterRegister::CutoffLow.addr(), // Starting position
-            &self.state.filter().payload(),
+            &buf,
         )
     }
     pub fn write_voice(&mut self, voice: usize) {
+        // Create buffer
+        let mut buf = [0u8;7];
+        // Fill contents
+        self.state.voices[voice].payload(&mut buf);
         self.write_regs(
             VoiceRegister::Freq.addr(voice), // Starting position
-            &self.state.voice(voice).payload(),
+            &buf,
         )
     }
     pub fn write_voices(&mut self) {
