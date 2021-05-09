@@ -54,7 +54,7 @@ where
     // Low Level SPI interface
     fn write_reg(&mut self, addr: u8, value: u8) {
         // Ensure the reset bit is 0
-        // Format is [ADDR RES DATA 0 0]
+        // Format is [0 0 ADDR RES DATA]
         let bytes = [addr << 1, value];
         self.cs.set_low().ok();
         self.spi.write(&bytes).ok();
